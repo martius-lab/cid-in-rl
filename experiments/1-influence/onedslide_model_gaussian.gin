@@ -1,0 +1,42 @@
+import cid.influence_estimation
+import cid.envs
+import cid.memory
+import cid.models
+import cid.models.layers
+import cid.rollouts
+import cid.utils.gin_torch_externals
+
+main.experiment_group = 'eval'
+main.experiment_name = 'onedslide_model_gaussian'
+main.env_fn = @envs.make_gym_env
+envs.make_gym_env.name = 'OneDSlide-v1'
+main.rollout_gen_cls = @GoalBasedRolloutGenerator
+main.episode_len = 30
+main.seed = 1
+
+main.model_classes = {
+    'full_model': @full_model/MLP
+}
+main.dataset_classes = {
+    'full_model': @full_model/ForwardGoalDataset
+}
+
+train.n_epochs = 3000
+train.log_every = 20
+train.validate_every = 20
+train.best_metric = 'val_mse'
+train.early_stopping_epochs = 10
+
+MLP.hidden_dims = [128, 128, 128, 128]
+MLP.weight_init = @init.orthogonal_
+MLP.bias_init = @init.zeros_
+MLP.outp_layer = @layers.GaussianLikelihoodHead
+MLP.use_spectral_norm = True
+
+layers.GaussianLikelihoodHead.min_var = 1e-6
+layers.GaussianLikelihoodHead.max_var = 5
+layers.GaussianLikelihoodHead.use_spectral_norm_var = True
+
+ModelTrainer.batch_size = 1000
+ModelTrainer.lr = 3e-4
+ModelTrainer.loss_fn = @full/gaussian_log_likelihood_loss

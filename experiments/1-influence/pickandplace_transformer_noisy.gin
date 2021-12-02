@@ -1,0 +1,53 @@
+import cid.influence_estimation
+import cid.envs
+import cid.envs.factorization
+import cid.memory
+import cid.models
+import cid.models.layers
+import cid.rollouts
+import cid.utils.gin_torch_externals
+
+main.experiment_group = 'eval'
+main.experiment_name = 'pickandplace_transformer_noisy'
+main.env_fn = @envs.make_gym_env
+envs.make_gym_env.name = 'FetchPickAndPlace-v1'
+main.rollout_gen_cls = @GoalBasedRolloutGenerator
+main.episode_len = 50
+main.seed = 1
+
+main.model_classes = {
+    'full_model': @full_model/Transformer
+}
+main.dataset_classes = {
+    'full_model': @FactorizedForwardDataset
+}
+
+FactorizedForwardDataset.factorizer = @factorization.fetch_with_object
+FactorizedForwardDataset.target_factorizer = @factorization.fetch_with_object_object_pos
+FactorizedForwardDataset.target_scale = 50
+FactorizedForwardDataset.use_state_noise = True
+FactorizedForwardDataset.state_noise_fn = @fetch_with_object_state_noise_fn
+FactorizedForwardDataset.copy_memory = True
+
+NOISE_LEVEL = 0.02
+fetch_with_object_state_noise_fn.noise_level = %NOISE_LEVEL
+fetch_with_object_state_noise_fn.only_object_noise = True
+
+train.n_epochs = 2000
+train.log_every = 20
+train.validate_every = 20
+train.best_metric = 'val_mse'
+train.early_stopping_epochs = 10
+train.n_workers = 0
+
+ModelTrainer.batch_size = 500
+ModelTrainer.loss_fn = @make_factorized_loss_fn()
+ModelTrainer.lr = 1e-4
+
+make_factorized_loss_fn.loss_fn = @mse_loss
+
+Transformer.embedding_dim = 128
+Transformer.fc_dim = 128
+Transformer.n_layers = 3
+Transformer.n_heads = 2
+Transformer.bn_first = True

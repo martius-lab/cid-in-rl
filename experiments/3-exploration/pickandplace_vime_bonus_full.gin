@@ -1,0 +1,108 @@
+import cid.algorithms
+import cid.influence_estimation
+import cid.envs
+import cid.envs.robotics
+import cid.envs.factorization
+import cid.memory
+import cid.models
+import cid.models.bnn
+import cid.rollouts
+import cid.utils.gin_torch_externals
+
+main.experiment_group = 'FetchPickAndPlace/exploration/vime_bonus_full'
+main.experiment_name = 'vime_bonus_full'
+main.env_fn = @envs.make_gym_env
+main.agent_fn = @ddpg/algorithms.make_agent
+main.warmup_agent_fn = @warmup/algorithms.make_agent
+main.rollout_gen_cls = @GoalBasedRolloutGenerator
+main.replay_memory_cls = @MBPReplayMemory
+main.model_setup_fn = @make_scorer_and_model_trainer
+main.episode_len = 50
+main.seed = 1
+
+envs.make_gym_env.name = 'FetchPickAndPlace-v1'
+envs.get_env_reward_fn.env_fn = @envs.make_gym_env
+
+train.n_iterations = 20000
+train.n_updates_per_step = 20
+train.batch_size = 256
+train.buffer_warmup = 200
+
+train.train_model_every = 10
+train.log_every = 200
+train.evaluate_every = 200
+train.save_every = 10000
+train.model_train_kwargs = {'rescore_transitions': False}
+
+test.n_episodes = 100
+
+MBPReplayMemory.size = 10000
+MBPReplayMemory.reward_fn = @envs.get_env_reward_fn()
+MBPReplayMemory.p_replay = 0.8
+MBPReplayMemory.prioritize_episodes = False
+MBPReplayMemory.prioritize_transitions = False
+MBPReplayMemory.bonus_type = "additive"
+MBPReplayMemory.influence_bonus = 0.3
+MBPReplayMemory.bonus_score_max = 10
+MBPReplayMemory.reward_max = 0
+
+warmup/algorithms.make_agent.agent_cls = @random_agent.RandomAgent
+warmup/algorithms.make_agent.goal_based = True
+
+ddpg/algorithms.make_agent.agent_cls = @ddpg_agent.DDPGAgent
+ddpg/algorithms.make_agent.goal_based = True
+
+DDPGAgent.pi_cls = @ddpg/MLP
+DDPGAgent.q_cls = @ddpg/MLP
+DDPGAgent.gamma = 0.98
+DDPGAgent.polyak = 0.95
+DDPGAgent.action_l2_penalty = 1.0
+DDPGAgent.action_noise = 0.2
+DDPGAgent.random_eps = 0.3
+DDPGAgent.observation_clip = (-5, 5)
+DDPGAgent.q_target_clip = (-50, 0)
+DDPGAgent.normalize_state = True
+DDPGAgent.normalizer_warmup_updates = 200
+
+ddpg/MLP.hidden_dims = [256, 256, 256]
+ddpg/MLP.weight_init = @init.xavier_uniform_
+MLP.bias_init = @init.zeros_
+
+make_scorer_and_model_trainer.scorer_cls = @VIMEScorer
+make_scorer_and_model_trainer.model_classes = {
+    'model': @BNN
+}
+make_scorer_and_model_trainer.dataset_classes = {
+    'model': @ForwardGoalDataset
+}
+
+ForwardGoalDataset.use_goal_diff_as_target = True
+ForwardGoalDataset.use_full_state_as_target = True
+ForwardGoalDataset.target_transform = @flat_fetch_with_object
+ForwardGoalDataset.target_scale = 50
+ForwardGoalDataset.copy_memory = True
+
+BNN.hidden_dims = [64, 64]
+BNN.bn_first = True
+BNN.std_likelihood = 0.5
+BNN.std_prior = 0.1
+BNN.n_samples = 10
+
+ModelTrainer.batch_size = 25
+ModelTrainer.loss_fn = @neg_log_prob_normal
+ModelTrainer.lr = 3e-3
+ModelTrainer.reg_losses = {'kl_div': 0.05}
+ModelTrainer.metric_fn = @bnn.mse
+OnlineModelTrainer.batch_mode = True
+OnlineModelTrainer.warmup_epochs = 20000
+OnlineModelTrainer.epochs_per_step = 100
+OnlineModelTrainer.p_latest_episodes = None
+OnlineModelTrainer.n_latest_episodes = None
+OnlineModelTrainer.n_dataloader_workers = 0
+
+VIMEScorer.target_transform = @flat_fetch_with_object
+VIMEScorer.target_is_state_diff = True
+VIMEScorer.n_info_gain_update_steps = 10
+VIMEScorer.info_gain_batch_size = 10
+VIMEScorer.normalize_scores = True
+VIMEScorer.normalize_n_rollouts = 10

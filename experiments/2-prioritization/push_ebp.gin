@@ -1,0 +1,58 @@
+import cid.algorithms
+import cid.envs
+import cid.envs.robotics
+import cid.memory
+import cid.models
+import cid.rollouts
+import cid.utils.gin_torch_externals
+
+main.experiment_group = 'FetchPush/prio/EBP'
+main.experiment_name = 'EBP'
+main.env_fn = @envs.make_gym_env
+main.agent_fn = @ddpg/algorithms.make_agent
+main.warmup_agent_fn = @warmup/algorithms.make_agent
+main.rollout_gen_cls = @GoalBasedRolloutGenerator
+main.replay_memory_cls = @EBPReplayMemory
+main.episode_len = 50
+main.seed = 1
+
+envs.make_gym_env.name = 'FetchPush-v1'
+envs.get_env_reward_fn.env_fn = @envs.make_gym_env
+
+train.n_iterations = 10000
+train.n_updates_per_step = 20
+train.batch_size = 256
+train.buffer_warmup = 200
+
+train.log_every = 200
+train.evaluate_every = 200
+train.save_every = 10000
+
+test.n_episodes = 100
+
+EBPReplayMemory.size = 10000
+EBPReplayMemory.env_name = 'FetchPickAndPlace'
+EBPReplayMemory.reward_fn = @envs.get_env_reward_fn()
+EBPReplayMemory.p_replay = 0.8
+
+warmup/algorithms.make_agent.agent_cls = @random_agent.RandomAgent
+warmup/algorithms.make_agent.goal_based = True
+
+ddpg/algorithms.make_agent.agent_cls = @ddpg_agent.DDPGAgent
+ddpg/algorithms.make_agent.goal_based = True
+
+DDPGAgent.pi_cls = @MLP
+DDPGAgent.q_cls = @MLP
+DDPGAgent.gamma = 0.98
+DDPGAgent.polyak = 0.95
+DDPGAgent.action_l2_penalty = 1.0
+DDPGAgent.action_noise = 0.2
+DDPGAgent.random_eps = 0.3
+DDPGAgent.observation_clip = (-5, 5)
+DDPGAgent.q_target_clip = (-50, 0)
+DDPGAgent.normalize_state = True
+DDPGAgent.normalizer_warmup_updates = 200
+
+MLP.hidden_dims = [256, 256, 256]
+MLP.weight_init = @init.xavier_uniform_
+MLP.bias_init = @init.zeros_

@@ -1,0 +1,129 @@
+import cid.algorithms
+import cid.influence_estimation
+import cid.envs
+import cid.envs.robotics
+import cid.memory
+import cid.models
+import cid.rollouts
+import cid.utils.gin_torch_externals
+
+main.experiment_group = 'FetchPickAndPlace/exploration/cai_intrinsic'
+main.experiment_name = 'cai_intrinsic'
+main.env_fn = @envs.make_gym_env
+main.agent_fn = @ddpg/algorithms.make_agent
+main.warmup_agent_fn = @warmup/algorithms.make_agent
+main.rollout_gen_cls = @GoalBasedRolloutGenerator
+main.replay_memory_cls = @MBPReplayMemory
+main.test_memory_cls = @test/MBPReplayMemory
+main.model_setup_fn = @make_scorer_and_model_trainer
+main.episode_len = 50
+main.seed = 1
+
+envs.make_gym_env.name = 'FetchPickAndPlaceContactDetection-v1'
+envs.make_gym_env.wrapper_env_fn = @nesting_wrapper_fn
+envs.get_env_reward_fn.env_fn = @envs.make_gym_env
+
+nesting_wrapper_fn.inner_wrapper_fn = @make_control_and_contact_fetch_env
+nesting_wrapper_fn.outter_wrapper_fn = @FetchInfoWrapper
+
+GoalBasedRolloutGenerator.store_contact_info = True
+GoalBasedRolloutGenerator.store_control_info = True
+GoalBasedRolloutGenerator.store_from_info = {'obj_movement': 'obj_movement', 
+                                             'obj_movement_by_agent': 'obj_movement_by_agent',
+                                             'obj_air': 'obj_air',
+                                             'obj_air_above_table': 'obj_air_above_table',
+                                             'obj_air_by_agent': 'obj_air_by_agent'}
+
+train.n_iterations = 5000
+train.n_updates_per_step = 20
+train.batch_size = 256
+train.buffer_warmup = 100
+
+train.train_model_every = 100
+train.log_every = 100
+train.evaluate_every = 100
+train.save_every = 5000
+train.train_model_schedule = @batch_train_schedule
+train.save_buffer_every = 5000
+
+test.n_episodes = 100
+
+MBPReplayMemory.size = 10000
+MBPReplayMemory.reward_fn = @envs.get_env_reward_fn()
+MBPReplayMemory.p_replay = 0.0
+MBPReplayMemory.prioritize_episodes = False
+MBPReplayMemory.prioritize_transitions = False
+MBPReplayMemory.only_bonus_reward = True
+MBPReplayMemory.bonus_type = "additive"
+MBPReplayMemory.influence_bonus = 1
+MBPReplayMemory.bonus_score_max = 10
+MBPReplayMemory.reward_max = None
+
+test/MBPReplayMemory.size = 50000
+
+warmup/algorithms.make_agent.agent_cls = @random_agent.RandomAgent
+warmup/algorithms.make_agent.goal_based = True
+
+ddpg/algorithms.make_agent.agent_cls = @ddpg_agent.DDPGAgent
+ddpg/algorithms.make_agent.goal_based = True
+
+DDPGAgent.pi_cls = @ddpg/MLP
+DDPGAgent.q_cls = @ddpg/MLP
+DDPGAgent.pi_lr = 3e-3
+DDPGAgent.q_lr = 3e-3
+DDPGAgent.gamma = 0.95
+DDPGAgent.polyak = 0.99
+DDPGAgent.action_l2_penalty = 1.0
+DDPGAgent.action_noise = 0.2
+DDPGAgent.random_eps = 0.3
+DDPGAgent.observation_clip = (-5, 5)
+DDPGAgent.q_target_clip = None
+DDPGAgent.normalize_state = True
+DDPGAgent.normalizer_warmup_updates = 200
+
+ddpg/MLP.hidden_dims = [192, 192]
+ddpg/MLP.weight_init = @init.xavier_uniform_
+MLP.bias_init = @init.zeros_
+
+make_scorer_and_model_trainer.scorer_cls = @CMIScorer
+make_scorer_and_model_trainer.model_classes = {
+    'full_model': @full_model/MLP
+}
+make_scorer_and_model_trainer.dataset_classes = {
+    'full_model': @full_model/ForwardGoalDataset
+}
+
+ForwardGoalDataset.target_scale = 50
+ForwardGoalDataset.copy_memory = True
+
+layers.GaussianLikelihoodHead.min_var = 1e-8
+layers.GaussianLikelihoodHead.max_var = 200
+layers.GaussianLikelihoodHead.use_spectral_norm_var = True
+
+full_model/MLP.hidden_dims = [256, 256, 256, 256]
+full_model/MLP.weight_init = @init.orthogonal_
+full_model/MLP.bias_init = @init.zeros_
+full_model/MLP.hidden_activation = @activation.Tanh
+full_model/MLP.bn_first = True
+full_model/MLP.legacy_bn_first = False
+full_model/MLP.input_skip_connections = False
+full_model/MLP.outp_layer = @layers.GaussianLikelihoodHead
+full_model/MLP.use_spectral_norm = False
+
+ModelTrainer.batch_size = 500
+ModelTrainer.loss_fn = @gaussian_log_likelihood_loss
+ModelTrainer.lr = 8e-4
+ModelTrainer.optimizer_kwargs = {'betas': (0.9, 0.9)}
+OnlineModelTrainer.epochs_per_step = None
+OnlineModelTrainer.warmup_epochs = None
+OnlineModelTrainer.n_dataloader_workers = 0
+OnlineModelTrainer.full_rescore_every = 1
+OnlineModelTrainer.rescore_n_latest_episodes = 1000
+batch_train_schedule.buffer_warmup = 100
+batch_train_schedule.train_model_every = 100
+batch_train_schedule.multiplier_start = 4
+batch_train_schedule.multiplier_interm = 4
+
+CMIScorer.n_expectation_samples = 32
+CMIScorer.n_mixture_samples = 32
+CMIScorer.reuse_action_samples = True

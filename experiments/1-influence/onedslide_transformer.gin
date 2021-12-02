@@ -1,0 +1,41 @@
+import cid.influence_estimation
+import cid.envs
+import cid.envs.factorization
+import cid.memory
+import cid.models
+import cid.rollouts
+import cid.utils.gin_torch_externals
+
+main.experiment_group = 'eval'
+main.experiment_name = 'onedslide_transformer'
+main.env_fn = @envs.make_gym_env
+envs.make_gym_env.name = 'OneDSlide-v1'
+main.rollout_gen_cls = @GoalBasedRolloutGenerator
+main.episode_len = 30
+main.seed = 1
+
+main.model_classes = {
+    'full_model': @full_model/Transformer
+}
+main.dataset_classes = {
+    'full_model': @FactorizedForwardDataset
+}
+
+FactorizedForwardDataset.factorizer = @factorization.one_d_slide
+FactorizedForwardDataset.target_factorizer = @factorization.one_d_slide
+
+train.n_epochs = 3000
+train.log_every = 20
+train.validate_every = 20
+train.best_metric = 'val_mse'
+train.early_stopping_epochs = 10
+
+Transformer.embedding_dim = 16
+Transformer.fc_dim = 32
+Transformer.n_layers = 2
+
+ModelTrainer.batch_size = 1000
+ModelTrainer.lr = 3e-4
+ModelTrainer.loss_fn = @make_factorized_loss_fn()
+
+make_factorized_loss_fn.loss_fn = @mse_loss

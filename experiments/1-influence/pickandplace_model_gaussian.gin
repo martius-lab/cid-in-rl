@@ -1,0 +1,48 @@
+import cid.influence_estimation
+import cid.envs
+import cid.memory
+import cid.models
+import cid.models.layers
+import cid.rollouts
+import cid.utils.gin_torch_externals
+
+main.experiment_group = 'eval'
+main.experiment_name = 'pickandplace_model_gaussian'
+main.env_fn = @envs.make_gym_env
+envs.make_gym_env.name = 'FetchPickAndPlace-v1'
+main.rollout_gen_cls = @GoalBasedRolloutGenerator
+main.episode_len = 50
+main.seed = 1
+
+main.model_classes = {
+    'full_model': @full_model/MLP
+}
+main.dataset_classes = {
+    'full_model': @full_model/ForwardGoalDataset
+}
+
+train.n_epochs = 2000
+train.log_every = 20
+train.validate_every = 20
+train.best_metric = 'val_mse'
+train.early_stopping_epochs = 10
+
+layers.GaussianLikelihoodHead.min_var = 1e-8
+layers.GaussianLikelihoodHead.max_var = 200
+layers.GaussianLikelihoodHead.use_spectral_norm_var = True
+
+ForwardGoalDataset.target_scale = 50
+ForwardGoalDataset.copy_memory = True
+
+MLP.hidden_dims = [256, 256, 256]
+MLP.weight_init = @init.orthogonal_
+MLP.bias_init = @init.zeros_
+MLP.hidden_activation = @activation.ReLU
+MLP.bn_first = True
+MLP.legacy_bn_first = True
+MLP.outp_layer = @layers.GaussianLikelihoodHead
+MLP.use_spectral_norm = True
+
+ModelTrainer.batch_size = 500
+ModelTrainer.loss_fn = @gaussian_log_likelihood_loss
+ModelTrainer.lr = 8e-4
