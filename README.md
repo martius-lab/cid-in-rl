@@ -30,7 +30,7 @@ Activate the environment with `conda activate cid_in_rl`.
 
 ### Causal Influence Detection
 
-To reproduce the causal influence detection experiment, you will need to [download the used datasets here](https://edmond.mpdl.mpg.de/imeji/exportServlet?format=file&id=http://edmond.mpdl.mpg.de/imeji/item/zdZNHpttyCakKTuK).
+To reproduce the causal influence detection experiment, you will need to [download the used datasets here](https://doi.org/10.17617/3.68TEG2).
 Extract them into the folder `data/`. 
 The most simple way to run all experiments is to use the included Makefile (this will take a long time):
 
